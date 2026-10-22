@@ -1,0 +1,17 @@
+# Robot, dataset and SmolVLA (feetech = SO101 motors)
+lerobot[feetech,smolvla]
+ 
+# LoRA post-training
+peft
+ 
+# Simulation and evaluation
+mujoco>=3.1
+numpy
+imageio[ffmpeg]
+mediapy
+matplotlib
+ 
+# Hugging Face Hub and notebooks
+huggingface_hub
+jupyter
+ 
