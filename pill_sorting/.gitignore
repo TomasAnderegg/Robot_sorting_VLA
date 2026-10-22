@@ -240,4 +240,5 @@ outputs/
 *.stl
 *.urdf
 *.xml
-*.part
+*.partMJDATA.TXT
+MUJOCO_LOG.TXT
