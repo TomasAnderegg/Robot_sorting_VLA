@@ -223,6 +223,7 @@ __marimo__/
 # Weights
 *.pt
 *.pth
+/models
 
 # Video
 *.mp4
