@@ -19,7 +19,7 @@ ROLLOUT = 1
 FOLDED_POSITION = (0.03329552, -1.74533, 1.69, 1.30343497, -0.11124077, -0.14770727)
 NOT_FOLDED_POS = (0.03329552, -1.31, 0.77, 1.09,-1.29, 0.0 )
 RANDOM_PILLS = True     # True: random layout; False: keep the positions from the XML/keyframe
-SEED = 10
+SEED = 1
 
 SQUARE_POSE = [ 0.3545, -0.06675, 0.0085 ]
 TRIANGLE_POSE = [ 0.3545, -0.04025, 0.0085 ]
@@ -36,7 +36,8 @@ if __name__ == "__main__":
 
     # fine_tuning_ckpt = "TomasAnderegg/pill_sorting_post_trained_a100"
     # fine_tuning_ckpt = "TomasAnderegg/pill_sorting_full_ft_a100"
-    fine_tuning_ckpt = "TomasAnderegg/pill_sorting_expert_only_a100"
+    # fine_tuning_ckpt = "TomasAnderegg/pill_sorting_expert_only_a100"
+    fine_tuning_ckpt = "/home/tjga98/Robot_sorting_vla/models/pill_sorting_expert_only_A100_big_data"
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     is_lora = False 
@@ -65,7 +66,7 @@ if __name__ == "__main__":
         # initialize the Mujoco env
         model = mujoco.MjModel.from_xml_path(r"/home/tjga98/mujoco_menagerie/robotstudio_so101/scene_pills.xml")
         data = mujoco.MjData(model)
-
+        # print("cameras:", dir(model.camera))
         cam_id = model.camera("wrist_cam").id
         # print(model.cam_fovy[cam_id], model.cam_sensorsize[cam_id])   # expect 61.0 and [0. 0.]
         
@@ -80,10 +81,10 @@ if __name__ == "__main__":
         data.ctrl = NOT_FOLDED_POS#FOLDED_POSITION # to set initial robot pose
        
         #Pill random pose:
-        if RANDOM_PILLS:
-            rng = np.random.default_rng(i)
-            layout = random_pill_positions(model, data, rng)
-            # print("Pill layout:", layout)
+        # if RANDOM_PILLS:
+        rng = np.random.default_rng(2)
+        layout = random_pill_positions(model, data, rng)
+        # print("Pill layout:", layout)
 
         done = False
 

@@ -77,7 +77,7 @@ def conversion(actions_stack, opposite_of_rad= False):
     '''
     Convert values into Mujoco or vice versa
     '''    
-    print("action value:", actions_stack[0])
+    # print("action value:", actions_stack[0])
     # print (actions_stack.shape)
     row, column = actions_stack.shape
 
