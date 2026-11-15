@@ -10,6 +10,8 @@ import torch
 import matplotlib.pyplot as plt
 from random_pill_pos import random_pill_positions
 from lerobot.policies.factory import make_pre_post_processors
+from pill_masking_artisanal.pill_masking import frame_mask
+import cv2
 
 RANDOM_PILLS = True     # True: random layout; False: keep the positions from the XML/keyframe
 SEED = 10
@@ -21,6 +23,21 @@ HOLD = 2 #second
 SYMBOLS = ["circle", "cross", "triangle", "square"]
 MAX_EPSIODE_TIME = 85.3 #second
 MARGIN = 10 #s
+COLOURS = ["red", "blue", "green", "yellow"]
+
+def detect_colour_from_task(task):
+            
+    words = task.split()
+    # print("mot:", words)
+    for colour in COLOURS:
+        if colour in words:
+            task_colour = colour
+        
+    # if len(colour_task) == 0:
+    #     raise ValueError(f"missing pill in task: {element!r}")
+    # if len(pills) > 1:
+    #     raise ValueError(f"too many pills in task: {element!r}")
+    return task_colour
 
 def transfer_to_mujoco(model, data, policy, preprocessor, postprocessor, task="task"):
     '''
@@ -58,12 +75,21 @@ def transfer_to_mujoco(model, data, policy, preprocessor, postprocessor, task="t
 
                     renderer.update_scene(data, camera="wrist_cam")
                     img = renderer.render()
-                    print(img.shape)
+                    # print("tache:", task)
+                    task_colour = detect_colour_from_task(task)
+                    # print("tache couleur:", task_colour)
+                    # print("tache_detectee:", task_colour)
+                    # print(img.shape)
+                    simu = True
+                    img_masked = frame_mask(img, task_colour, simu=simu)
+                    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+                    # h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
 
                     #Input of the VLA model
                     observation_state = data.qpos[:6].reshape(1,6)
-                    observation_image = img
-                    plt.imsave("sim_frame.png", img)
+                    observation_image = img_masked #img
+                    plt.imsave("sim_frame_rgb.png", img)
+                    plt.imsave("sim_frame_hsv.png", hsv)
 
                    
                     
@@ -94,8 +120,8 @@ def transfer_to_mujoco(model, data, policy, preprocessor, postprocessor, task="t
         t = np.array(times)
         cmd = np.degrees(cmds)
         act = np.degrees(actuals)
-        print("len(act):", len(act))
-        print("len(cmd):", len(cmd))
+        # print("len(act):", len(act))
+        # print("len(cmd):", len(cmd))
         for i in range(6):
             plt.subplot(3, 2, i + 1)
             plt.plot(t, cmd[:, i], label="commanded")
@@ -115,7 +141,7 @@ if __name__ == "__main__":
     ds = LeRobotDataset(repo_id= repo_id,episodes = [0], download_videos = True)
     # ds = LeRobotDataset(repo_id= repo_id,episodes = [30], download_videos = False)
     img = ds[0]["observation.images.front"]
-    print(img.shape, img.dtype, img.min().item(), img.max().item())
+    # print(img.shape, img.dtype, img.min().item(), img.max().item())
     
     plt.imshow(img.permute(1, 2, 0))
     plt.show()

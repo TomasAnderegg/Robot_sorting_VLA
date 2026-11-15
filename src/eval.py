@@ -37,7 +37,8 @@ if __name__ == "__main__":
     # fine_tuning_ckpt = "TomasAnderegg/pill_sorting_post_trained_a100"
     # fine_tuning_ckpt = "TomasAnderegg/pill_sorting_full_ft_a100"
     # fine_tuning_ckpt = "TomasAnderegg/pill_sorting_expert_only_a100"
-    fine_tuning_ckpt = "/home/tjga98/Robot_sorting_vla/models/pill_sorting_expert_only_A100_big_data"
+    # fine_tuning_ckpt = "TomasAnderegg/pill_sorting_medoc_dagger_mix_v2_model"
+    fine_tuning_ckpt = "TomasAnderegg/pill_sorting_full_ft_a100_v3_dagger60"
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     is_lora = False 
