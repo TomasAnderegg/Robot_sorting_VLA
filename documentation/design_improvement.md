@@ -219,16 +219,21 @@ As showns in the illustration, the loop has 3 blocks: the environment where the 
 3. VLA model: it converts the state and images observations together with the task instruction into actions. It produces 50 actions at once (an action chunk) instead of a single action. A specific build-in function (select_action function) either generates a new chunk of 50 actions or releases the actions of the current chunk at the policy's 30 Hz frequency. This chunk generation allow the model to be called less time making it efficient. For an episode lasting at most 85.3s, 'select_action' is called 2559 times but the VLA generates actions only 52 times. The rest of the time, the action of the current chunk are executed sequentially one every 0.0333s.   
 
 #### Stuck in the folded pose:
-Now with the new dataset, I made sure to vary a bit the starting pose around the folded pose. This results on an improvment of this problem. Now the robot move to accomplish its task whithout lagging or getting stuck on the folded pose.
+Now with the new dataset (TomasAnderegg/so101_pill_sorting_v3), I made sure to vary a bit the starting pose around the folded pose. This results on an improvment both on simulation and on the real hardware of this problem. Now the robot move to accomplish its task whithout lagging or getting stuck on the folded pose.
 
 #### Visual understanding and Task understanding:
-Despite the fact the dataset is better, the policy still struggles to grab the correct pill. After conducting 4 experiment with the task "Put the red pill in the circle compartment.", the robot grabbed the wrong pill all the time but succeed to put it on the correct compartment. This was observed during the deployment of the policy on my real hardware.
+Despite the fact the folded problem is fixed, the policy still struggles to grab the correct pill. After conducting 4 experiment with the task "Put the red pill in the circle compartment.", the robot grabbed the wrong pill all the time but succeed to put it on the correct compartment. This was observed during the deployment of the policy on my real hardware.
 
 However during the deployment on simulation, the robot couldn't do either task. This is probably due to the sim-to-real gap. To improve this, a dataset on simulation will be recorded and the policy will be retrained with both data: from the teleoperation and simulation.
 
 To assess the problem, I needed to test the policy to see if the problem was related to the task description or the visual content understanding. I took an episode selected 2 frames from that episode where the robot sees the environment with all the pills to assess its ability to detect the correct pill colour and go for it. And another frame where the robot has grabbed the pill and it is about to choose the compartment, this allows me to assess whether the robot take into account the task description. 
 
-By loading the post-trained policy, extracting the state observation, task, visual observation and the correct actions produced I was able to spot the problem. Proceed to run the experiment with 3 different episodes and also by fixing the starting noise the action expert is using to only focus on those experiment and not take into account the random noise the action expert is starting with. The following figures only show for episode 150 for different frames but the result is the same for the 3 episodes:
+<p align="center">
+  <img src="../assets/idx_colour.png" width="49%">
+  <img src="../assets/idx_comp.png" width="49%">
+</p>
+
+By loading the post-trained policy, extracting the state observation, task, visual observation and the correct actions produced I was able to spot the problem. Proceed to run the experiment with 3 different episodes and also by fixing the starting noise the action expert is using to only focus on those experiment and not take into account the random noise the action expert is starting with. The following figures only show for episode 150 for different frames:
 
 
 Task ref: "Put the yellow pill in the cross compartment."\
@@ -246,13 +251,96 @@ Task colour changed: "Put the blue pill in the cross compartment."
   <img src="../assets/colour_task_colour.png" width="49%">
 </p>
 
-If the policy understand the task and understand the colour, the behevious should change when changing the colour or compartment. By observing the first 2 plots about the compartment changes, we clearly see that the model adjust the joint value to the new compartment compared to the reference.
-Where as for the colour, the policy don't really show this behaviour for all the episode tested by having very similar results than the reference one.
+If the policy understand the task and understand the colour, the beheviour should change when changing the colour or compartment. By observing the first 2 plots about the compartment changes, we clearly see that the model adjust the joint value to the new compartment compared to the reference.
+Whereas for the colour, the policy does not seem to show this behaviour.
 
-Concluding the model take the task into account but struggles with the visual understanding of the colours.
+To verify this assumption, I ran different ablations, where I tested the model by changing: 
+1. Varying the noise with the state values and task unchanged: over 5 different seeds.
+2. Changing the colour: "red" instead of "yellow" for episode 150
+3. Changing the compartment word
+4. A meaningless word of the task: "Place" instead of "Put" 
+ 
+Beforehand, I tested the model's reproducibility by running the policy with the same image, same states, same task and same seed twice resulting in a deterministic ($\Delta = 0$) model. This allows me to avoid introducing noise to the analysis so that every difference in the ablations come from the thing I changed (seed or word), not from hidden randomness in the pipeline.
+
+The first ablation consists of comparing the policy with 5 different seeds. This allows me to determine the variability of the policy under different noise. This corresponds to the reference that I will compare the rest of the ablation with.
+
+The second ablation consists of swapping the colour word of the task with another. This analysis was done 5 times using 5 different seeds. Then I compared the gap between the reference curve with the colour swapped and take the maximum value. This captures whether the model reacts to the colour word. 
+
+Similarly, the third ablation swaps the compartment word of the task by replacing "cross" with "circle". This allows me to detect if the compartment word has an impact on the policy's prediction at this early stage of the episode. 
+
+Finally, the last one consists of swapping the verb word of the task by replacing "Put" by "Place". This ablation allows me to detect if by changing a meaningless word inside the task would affect the policy's prediction. Comparing this result and the colour swap would allow me to see if the colour word is meaningless or not.
+
+#### Results:
+Results from episode 150 at the phase where the gripper is closed and empty, approaching the pills, frame 150 (t = 5.0 s), 5 seeds. Frame selected because the model is expected to take its colour decision as soon as it sees the coloured pills.
+
+Reference prompt: *"Put the yellow pill in the cross compartment."*
+
+| Joint | Noise (seed pairs, n=10) | Colour yellow→red (n=5) | Compartment cross→circle (n=5) | Verb Put→Place, control (n=5) |
+|---|---|---|---|---|
+| shoulder_pan  | 4.60 ± 1.21 | 1.09 ± 0.29 | 1.29 ± 0.13 | 0.79 ± 0.22 |
+| shoulder_lift | 7.69 ± 1.62 | **17.53 ± 4.96** | 2.33 ± 1.32 | 4.19 ± 1.43 |
+| elbow_flex    | 9.54 ± 2.27 | 10.09 ± 2.84 | 3.82 ± 1.05 | 2.87 ± 1.06 |
+| wrist_flex    | 8.06 ± 2.14 | 6.11 ± 0.98 | 1.30 ± 0.16 | 1.33 ± 0.10 |
+| wrist_roll    | 5.73 ± 1.52 | 1.44 ± 0.44 | 2.51 ± 0.77 | 1.29 ± 0.23 |
+| gripper       | 0.22 ± 0.04 | 0.09 ± 0.01 | 0.12 ± 0.02 | 0.09 ± 0.01 |
+
+*Values: maximum absolute difference over the 50-step action chunk between two predicted trajectories, mean $\pm$ std over pairs. Units: degrees (gripper: % opening). Noise column: same prompt, all 10 pairs of the 5 seeds. Word columns: one word changed, same seed (5 paired comparisons). Determinism check: repeated prediction with identical input and seed gives* $\max |\Delta| = 0$.
+
+<p align="center">
+  <img src="../assets/motion_var.png" width="90%">
+</p>
+
+The first column compares how the model varies depending on the noise for each joint value. The second column, it compared the colour swap and the reference with the same seed for all joints, similarly for the compartment swap and verb swap ("Place" instead of "Put").
+
+The table suggests that the shoulder lift (17.53 ± 4.96), elbow flex (10.09 ± 2.84) and wrist flex (6.11 ± 0.98) joints are influenced by the colour swap. By analyzing the shoulder lift's value, we notice the interval from the colour swap does not overlap the noise one as well as the compartment and verb one. Suggesting the colour has a real impact on the policy for this joint. Notice that for the colour swap the noise has a strong impact by looking at the standard deviation.
+
+For the elbow flex, the colour swap values obtained are greater than the verb and compartment, suggesting that the colour swap has also a strong impact on the policy for this joint. But the colour swap values overlap the noise one.The colour word clearly changes elbow flex compared with a neutral word, but the change is about the same size as the noise variation.
+
+Similarly, for the wrist flex colour value, we notice the colour swap has more impact than the compartment and verb swap. But the colour swap values and the noise values overlap suggesting the noise is slightly larger than the colour swap values.
+
+In conclusion, the first observation made earlier suggesting that the colour word does not influence the policy's prediction is wrong, the ablation done shows it is not ignored but its effect is comparable to the sampling noise on most joints. Also notice, this ablation was only done on episode 150, frame 150 on 5 different seeds. The results shows the arm could reach further but not that it will reach the red pill.
+
+#### Different post-training method 
+
+I wanted to see if I could improve the colour understand of the VLA model by doing another post-training from the previous checkpoint. I post-trained the model by unfreezing the VLM allowing the model to adapt its weight in the cross attention layer of language model part only. Allowing the weights of the language model to adapt to the tasks and also to spot if the problem is understanding the word or finding the colour in the image.
+
+#### Results
+
+| Joint | Noise (seed pairs, n=10) | Colour yellow→red (n=5) | Compartment cross→circle (n=5) | Verb Put→Place, control (n=5) |
+|---|---|---|---|---|
+| shoulder_pan  | 4.25 ± 1.08 | 1.27 ± 0.23 | 1.81 ± 0.19 | 0.65 ± 0.10 |
+| shoulder_lift | 6.59 ± 1.96 | **11.91 ± 3.24** | 1.43 ± 0.87 | 4.70 ± 1.37 |
+| elbow_flex    | 8.35 ± 2.23 | 6.97 ± 2.29 | 2.92 ± 0.94 | 3.60 ± 1.19 |
+| wrist_flex    | 7.15 ± 1.88 | 5.72 ± 0.64 | 1.14 ± 0.12 | 1.49 ± 0.13 |
+| wrist_roll    | 6.14 ± 1.52 | 2.16 ± 0.99 | 2.89 ± 0.49 | 1.58 ± 0.22 |
+| gripper       | 0.20 ± 0.05 | 0.11 ± 0.01 | 0.15 ± 0.02 | 0.09 ± 0.01 |
+
+<p align="center">
+  <img src="../assets/motion_var_vlm_unfrozen.png" width="90%">
+</p>
+
+The table suggests that the shoulder lift (11.91 ± 3.24), elbow flex (6.97 ± 2.29) and wrist flex (5.72 ± 0.64) joints are influenced by the colour swap. By analyzing the shoulder lift's value, we notice the interval from the colour swap does not overlap the noise one as well as the compartment and verb one. Suggesting the colour has a real impact on the policy for this joint even for this new post-training method. Notice that for the colour swap the noise has a strong impact by looking at the standard deviation.
+
+For the elbow flex, the colour swap values obtained are greater than the compartment swap but slightly overlap with the verb, suggesting that the colour swap has also a strong impact over the compartment but cannot be distinguished over the verb swap. The colour values are also overlap by the noise values. Suggesting the colour values cannot be distinguished by the noise and the verb swap.
+
+For the wrist flex colour value, we notice the colour swap has more impact than the compartment and verb swap. But the colour swap values and the noise values overlap suggesting the noise is slightly larger than the colour swap values.
+
+Now by comparing this method with the previous post-training method, by looking at the different analysis made for the 3 joint values, the result got slightly worse according to the table below. Concluding that this method did not help the model to understand better the colour word.
+
+**Colour-word sensitivity relative to noise and to the control: frozen VLM (`pill_sorting_expert_only_A100_big_data`) vs unfrozen VLM (`pill_sorting_vlm_unfrozen_A100`), episode 150, frame 150, 5 seeds**
+
+| Joint | colour ÷ noise (frozen) | colour ÷ noise (unfrozen) | colour ÷ verb (frozen) | colour ÷ verb (unfrozen) |
+|---|---|---|---|---|
+| shoulder_lift | 2.28 | 1.81 | 4.18 | 2.53 |
+| elbow_flex    | 1.06 | 0.83 | 3.52 | 1.94 |
+| wrist_flex    | 0.76 | 0.80 | 4.59 | 3.84 |
+
+*Ratio of mean max-over-time |Δ| values from the two result tables. A ratio close to 1 means the colour word is hard to tell apart from seed noise (left columns) or from a meaningless rewording (right columns).*
+
+
 
 #### Conclusion:
-I conclude that three factors explain why the robot did not learn the tasks well even though the model was pretrained: the amount of recorded data is too small, the image quality is poor, since the robot recognised neither the colours nor the symbols and the dataset is not diverse enough as all episodes share the same start and end pose.
+...
 
 ## Problems and solutions:
 1. Unreadable compartment labels: the camera resolution was too low to read the text on the pill organizer so I replaced the text with symbols to make sure the robot can recognise the compartments
