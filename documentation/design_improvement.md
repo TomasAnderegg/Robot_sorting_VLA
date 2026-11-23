@@ -380,6 +380,11 @@ No further experiments were done to solve this open problem.
 #### Conclusion:
 
 Despite three experiments, the model struggles to detect the correct colour. [Emukpere et al., 2026] also mentioned this problem in their experiments. To carry on this project, as mentioned earlier, a YOLO model will be used to detect the correct pill according to the task and will mask the others. Since the model knows how to grasp, the YOLO model and the masking will allow the project to work.
+### Visual Model
+
+To tackle the visual understanding problem mentioned previously, I decide to use a YOLO model that detects the correct pill according to the task and mask the others. The policy would only focus on the grasping. 
+
+I choose a YOLOn11 that I fine-tuned with my own labeled dataset created with RoboFlow. I needed then to connect this module to the pipeline of the robot. I needed to dig inside the LeRobot scripts to monkey patch the correct function that receives the raw image camera input and gives it to the model (ThreadSafeRobot.get_observation). Once the monkey patch was created, I needed to construct my own rollout function to make sure my function with the YOLO model was taken into account. 
 
 ## Problems and solutions:
 1. Unreadable compartment labels: the camera resolution was too low to read the text on the pill organizer so I replaced the text with symbols to make sure the robot can recognise the compartments
