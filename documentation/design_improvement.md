@@ -294,7 +294,7 @@ The first column compares how the model varies depending on the noise for each j
 
 The table suggests that the shoulder lift (17.53 ± 4.96), elbow flex (10.09 ± 2.84) and wrist flex (6.11 ± 0.98) joints are influenced by the colour swap. By analyzing the shoulder lift's value, we notice the interval from the colour swap does not overlap the noise one as well as the compartment and verb one. Suggesting the colour has a greater impact on the policy for this joint. Notice that for the colour swap the noise has a greater impact by looking at the standard deviation.
 
-For the elbow flex, the colour swap values obtained are greater than the verb and compartment, suggesting that the colour swap has also a strong impact on the policy for this joint. But the colour swap values overlap the noise one. The colour word clearly changes elbow flex compared with a neutral word, but the change is about the same size as the noise variation.
+For elbow_flex, changing the colour word moves the joint about 3.5 times more than the meaningless verb change, with no overlap between the two ranges. However, this effect is about the same size as the variation caused by changing the random seed alone, so it cannot be separated from noise.
 
 Similarly, for the wrist flex colour value, we notice the colour swap has more impact than the compartment and verb swap. But the colour swap values and the noise values overlap suggesting the noise is slightly larger than the colour swap values.
 
@@ -302,20 +302,41 @@ In conclusion, the first observation made earlier suggesting that the colour wor
 
 I created a counterfactual dataset to get a ground truth for every colour in the same scene. For each layout, I recorded 4 episodes with the same pill positions, the same start pose and the same compartment. Only the colour in the task changes. This let me check whether changing the colour word makes the policy move toward the requested pill, or whether it makes the same movement whatever the colour is.
 
-I tested two checkpoints: one trained without the counterfactual data (full_ft_a100_v3_dagger60) and one trained with it (colour_cf_departure_mix_ft_v2). For each layout, I took one frame from the layout's first episode and gave the policy the same image, the same robot state and the same noise, changing only the colour word. The policy predicts 50 steps of movement, and I kept the arm position at step 36, using the base rotation, shoulder and elbow angles. I compared it with the positions I recorded when I actually went to each pill: the closest one, by Euclidean distance over these three joint angles, counts as the pill the policy chose. Each prediction adds +1 to the cell (colour asked, pill chosen). With 12 layouts, 4 colours and 5 noise seeds, this gives 240 predictions per checkpoint (Figure 1).
+I tested two checkpoints: one trained without the counterfactual data (full_ft_a100) and one trained with it (colour_cf_departure_mix_ft_v2). For each layout, I took one frame from the layout's first episode and gave the policy the same image, the same robot state and the same noise, changing only the colour word. The policy predicts 50 steps of movement, and I kept the arm position at step 36, using the base rotation, shoulder and elbow angles. I compared it with the positions I recorded when I actually went to each pill: the closest one, by Euclidean distance over these three joint angles, counts as the pill the policy chose. Each prediction adds +1 to the cell (colour asked, pill chosen). With 12 layouts, 4 colours and 5 noise seeds, this gives 240 predictions per checkpoint (Figure 1).
 
 <p align="center">
   <img src="../assets/confusion_matrix_full_ft_a100_chkpt_3joints.png" width="45%">
   <img src="../assets/confusion_matrix_pill_sorting_colour_cf_departure_mix_ft_v2_chkpt_3joints.png" width="45%">
 </p>
 <p align="center">
-  <em><b>Figure 1.</b> Colour-grounding confusion matrices (colour word asked × pill chosen, 240 predictions each).
-  <b>Left:</b> checkpoint trained without counterfactual data (<code>pill_sorting_expert_only_A100_big_data</code>).
-  <b>Right:</b> checkpoint trained with counterfactual data (<code>colour_cf_departure_mix_ft_v2</code>).
-  Chance level is 25%.</em>
+  <em><b>Figure 1.</b> Colour-grounding confusion matrices (colour word asked × pill chosen, 240 predictions each), using the base rotation, shoulder and elbow angles at step 36. Chance level is 25%.
+  <b>Left:</b> checkpoint trained without counterfactual data (<code>full_ft_a100</code>).
+  <b>Right:</b> checkpoint trained with counterfactual data (<code>colour_cf_departure_mix_ft_v2</code>), evaluated on its own training episodes.</em>
 </p>
 
-Both checkpoints stay close to chance level (25%). In both matrices, the rows look alike, so the arm goes to roughly the same place whatever colour is asked. Training on the counterfactual data did not fix this. This matches a known weakness of VLA policies: they grasp reliably but fail to select the instructed object ([Emukpere et al., 2026](https://arxiv.org/abs/2602.24143)). I therefore moved target selection out of the policy: a YOLO detector finds the requested pill and masks the others, so the policy only has to grasp.
+Both checkpoints stay close to chance level (25%). In both matrices, the rows look alike: the arm goes to roughly the same place whatever colour is asked.
+
+To check whether 30% is really above chance, I used the standard error of a proportion:
+
+$$
+\sigma = \sqrt{\frac{p\,(1-p)}{n}}
+$$
+
+with $p = 0.25$ (chance level). This formula assumes that every prediction is independent. My 240 predictions are not: they come from 48 situations (12 layouts × 4 colours), each repeated with 5 seeds on the same image. I therefore used $n = 48$ rather than $n = 240$, which gives $\sigma = 6.25\%$ (instead of $2.8\%$). The distance from chance is then
+
+$$
+z = \frac{30\% - 25\%}{6.25\%} = 0.8
+$$
+
+so the result lies well within $\pm 2\sigma$ of chance level. There is no evidence that the policy uses the colour word to choose its target, even though the counterfactual checkpoint was evaluated on episodes it was trained on.
+
+Training on the counterfactual data did not fix this. This matches a known weakness of VLA policies: they grasp reliably but fail to select the instructed object ([Emukpere et al., 2026](https://arxiv.org/abs/2602.24143)). I therefore moved target selection out of the policy: a YOLO detector finds the requested pill and masks the others, so the policy only has to grasp.
+
+One last hypothesis was tested. SmolVLA does not learn from whole episodes but from individual frames, sampled at random: each frame is one training example. The decision about which coloured pill to go to is made at the start of an episode, in roughly the first 90 frames (3 s), while grasping, carrying and dropping the pill take several hundred frames. Every episode has a start, but it is short compared with the rest, so only about 17% of the training examples cover the decision moment. Notice that not all of these 90 frames require the colour word because once the arm starts moving, its position already shows the direction, so the true share of decision frames is probably lower. The rest of the episode teaches the policy nothing about the colour word, because once the arm is heading toward a pill, the images and joint values are enough to finish the task. A wrong decision at the start is therefore hard to recover from: the arm keeps going toward the wrong pill.
+
+To give this moment more weight, I oversampled it. In addition to the counterfactual episodes, I added the first 90 frames of each of them three more times, so the model sees every departure four times (the original plus 3 copies). Departure frames went from about 17% of the training examples to about 44%. This adds no new information; it only makes the training push much harder on "go in the right direction for the colour named".
+
+This checkpoint is the one shown on the right of Figure 1, and it still stays close to chance level: even with the decision moment oversampled, the policy did not learn to follow the colour word.
 
 #### Different post-training method 
 
@@ -338,7 +359,7 @@ I wanted to test whether the policy's use of the colour word could be improved b
 
 The table suggests that the shoulder lift (11.91 ± 3.24), elbow flex (6.97 ± 2.29) and wrist flex (5.72 ± 0.64) joints are influenced by the colour swap. By analyzing the shoulder lift's value, we notice the interval from the colour swap does not overlap the noise one as well as the compartment and verb one. Suggesting the colour has a real impact on the policy for this joint even for this new post-training method. Notice that for the colour swap the noise has a strong impact by looking at the standard deviation.
 
-For the elbow flex, the colour swap values obtained are greater than the compartment swap but slightly overlap with the verb, suggesting that the colour swap has also a strong impact over the compartment but cannot be distinguished over the verb swap. The colour values also overlap with the noise values, suggesting that the colour values cannot be distinguished from the noise and the verb swap.
+For elbow_flex, changing the colour word moves the joint about twice as much as the meaningless verb change and more than the compartment change, although its range slightly overlaps with the verb's. However, this effect is smaller than the variation caused by changing the random seed alone, so it cannot be separated from noise.
 
 For the wrist flex colour value, we notice the colour swap has more impact than the compartment and verb swap. But the colour swap values and the noise values overlap suggesting the noise is slightly larger than the colour swap values.
 
@@ -354,11 +375,11 @@ Now by comparing this method with the previous post-training method, by looking 
 
 *Ratio of mean max-over-time |Δ| values from the two result tables. A ratio close to 1 means the colour word is hard to tell apart from seed noise (left columns) or from a meaningless rewording (right columns).*
 
-No further experiment are done to solve this open problem. 
+No further experiments were done to solve this open problem. 
 
 #### Conclusion:
 
-Despite 3 analysis, the model struggles to detect the correct colour. [Emukpere et al., 2026] also mentioned this problem on their experiment. To carry on this project, as mentioned earlier, a YOLO model will be used to detect the correct pill according to the task and will mask the others. Since the model knows how to grasp, the Yolo model and the masking will allow the project to work.
+Despite three experiments, the model struggles to detect the correct colour. [Emukpere et al., 2026] also mentioned this problem in their experiments. To carry on this project, as mentioned earlier, a YOLO model will be used to detect the correct pill according to the task and will mask the others. Since the model knows how to grasp, the YOLO model and the masking will allow the project to work.
 
 ## Problems and solutions:
 1. Unreadable compartment labels: the camera resolution was too low to read the text on the pill organizer so I replaced the text with symbols to make sure the robot can recognise the compartments
