@@ -292,17 +292,34 @@ Reference prompt: *"Put the yellow pill in the cross compartment."*
 
 The first column compares how the model varies depending on the noise for each joint value. The second column, it compared the colour swap and the reference with the same seed for all joints, similarly for the compartment swap and verb swap ("Place" instead of "Put").
 
-The table suggests that the shoulder lift (17.53 ± 4.96), elbow flex (10.09 ± 2.84) and wrist flex (6.11 ± 0.98) joints are influenced by the colour swap. By analyzing the shoulder lift's value, we notice the interval from the colour swap does not overlap the noise one as well as the compartment and verb one. Suggesting the colour has a real impact on the policy for this joint. Notice that for the colour swap the noise has a strong impact by looking at the standard deviation.
+The table suggests that the shoulder lift (17.53 ± 4.96), elbow flex (10.09 ± 2.84) and wrist flex (6.11 ± 0.98) joints are influenced by the colour swap. By analyzing the shoulder lift's value, we notice the interval from the colour swap does not overlap the noise one as well as the compartment and verb one. Suggesting the colour has a greater impact on the policy for this joint. Notice that for the colour swap the noise has a greater impact by looking at the standard deviation.
 
-For the elbow flex, the colour swap values obtained are greater than the verb and compartment, suggesting that the colour swap has also a strong impact on the policy for this joint. But the colour swap values overlap the noise one.The colour word clearly changes elbow flex compared with a neutral word, but the change is about the same size as the noise variation.
+For the elbow flex, the colour swap values obtained are greater than the verb and compartment, suggesting that the colour swap has also a strong impact on the policy for this joint. But the colour swap values overlap the noise one. The colour word clearly changes elbow flex compared with a neutral word, but the change is about the same size as the noise variation.
 
 Similarly, for the wrist flex colour value, we notice the colour swap has more impact than the compartment and verb swap. But the colour swap values and the noise values overlap suggesting the noise is slightly larger than the colour swap values.
 
 In conclusion, the first observation made earlier suggesting that the colour word does not influence the policy's prediction is wrong, the ablation done shows it is not ignored but its effect is comparable to the sampling noise on most joints. Also notice, this ablation was only done on episode 150, frame 150 on 5 different seeds. The results shows the arm could reach further but not that it will reach the red pill.
 
+I created a counterfactual dataset to get a ground truth for every colour in the same scene. For each layout, I recorded 4 episodes with the same pill positions, the same start pose and the same compartment. Only the colour in the task changes. This let me check whether changing the colour word makes the policy move toward the requested pill, or whether it makes the same movement whatever the colour is.
+
+I tested two checkpoints: one trained without the counterfactual data (full_ft_a100_v3_dagger60) and one trained with it (colour_cf_departure_mix_ft_v2). For each layout, I took one frame from the layout's first episode and gave the policy the same image, the same robot state and the same noise, changing only the colour word. The policy predicts 50 steps of movement, and I kept the arm position at step 36, using the base rotation, shoulder and elbow angles. I compared it with the positions I recorded when I actually went to each pill: the closest one, by Euclidean distance over these three joint angles, counts as the pill the policy chose. Each prediction adds +1 to the cell (colour asked, pill chosen). With 12 layouts, 4 colours and 5 noise seeds, this gives 240 predictions per checkpoint (Figure 1).
+
+<p align="center">
+  <img src="../assets/confusion_matrix_full_ft_a100_chkpt_3joints.png" width="45%">
+  <img src="../assets/confusion_matrix_pill_sorting_colour_cf_departure_mix_ft_v2_chkpt_3joints.png" width="45%">
+</p>
+<p align="center">
+  <em><b>Figure 1.</b> Colour-grounding confusion matrices (colour word asked × pill chosen, 240 predictions each).
+  <b>Left:</b> checkpoint trained without counterfactual data (<code>pill_sorting_expert_only_A100_big_data</code>).
+  <b>Right:</b> checkpoint trained with counterfactual data (<code>colour_cf_departure_mix_ft_v2</code>).
+  Chance level is 25%.</em>
+</p>
+
+Both checkpoints stay close to chance level (25%). In both matrices, the rows look alike, so the arm goes to roughly the same place whatever colour is asked. Training on the counterfactual data did not fix this. This matches a known weakness of VLA policies: they grasp reliably but fail to select the instructed object ([Emukpere et al., 2026](https://arxiv.org/abs/2602.24143)). I therefore moved target selection out of the policy: a YOLO detector finds the requested pill and masks the others, so the policy only has to grasp.
+
 #### Different post-training method 
 
-I wanted to see if I could improve the colour understand of the VLA model by doing another post-training from the previous checkpoint. I post-trained the model by unfreezing the VLM allowing the model to adapt its weight in the cross attention layer of language model part only. Allowing the weights of the language model to adapt to the tasks and also to spot if the problem is understanding the word or finding the colour in the image.
+I wanted to test whether the policy's use of the colour word could be improved by continuing post-training from the previous checkpoint with the VLM unfrozen. In the expert-only run, only the action expert was trained, including the cross-attention projections through which it reads the VLM's keys and values. Unfreezing the VLM additionally lets the language-model layers adapt to the task which changes how the prompt and the image tokens are encoded before the expert reads them. Because these layers process both the text and the image tokens, this experiment alone cannot tell whether a failure comes from understanding the colour word or from finding the colour in the image.
 
 #### Results
 
@@ -321,7 +338,7 @@ I wanted to see if I could improve the colour understand of the VLA model by doi
 
 The table suggests that the shoulder lift (11.91 ± 3.24), elbow flex (6.97 ± 2.29) and wrist flex (5.72 ± 0.64) joints are influenced by the colour swap. By analyzing the shoulder lift's value, we notice the interval from the colour swap does not overlap the noise one as well as the compartment and verb one. Suggesting the colour has a real impact on the policy for this joint even for this new post-training method. Notice that for the colour swap the noise has a strong impact by looking at the standard deviation.
 
-For the elbow flex, the colour swap values obtained are greater than the compartment swap but slightly overlap with the verb, suggesting that the colour swap has also a strong impact over the compartment but cannot be distinguished over the verb swap. The colour values are also overlap by the noise values. Suggesting the colour values cannot be distinguished by the noise and the verb swap.
+For the elbow flex, the colour swap values obtained are greater than the compartment swap but slightly overlap with the verb, suggesting that the colour swap has also a strong impact over the compartment but cannot be distinguished over the verb swap. The colour values also overlap with the noise values, suggesting that the colour values cannot be distinguished from the noise and the verb swap.
 
 For the wrist flex colour value, we notice the colour swap has more impact than the compartment and verb swap. But the colour swap values and the noise values overlap suggesting the noise is slightly larger than the colour swap values.
 
@@ -337,10 +354,11 @@ Now by comparing this method with the previous post-training method, by looking 
 
 *Ratio of mean max-over-time |Δ| values from the two result tables. A ratio close to 1 means the colour word is hard to tell apart from seed noise (left columns) or from a meaningless rewording (right columns).*
 
-
+No further experiment are done to solve this open problem. 
 
 #### Conclusion:
-...
+
+Despite 3 analysis, the model struggles to detect the correct colour. [Emukpere et al., 2026] also mentioned this problem on their experiment. To carry on this project, as mentioned earlier, a YOLO model will be used to detect the correct pill according to the task and will mask the others. Since the model knows how to grasp, the Yolo model and the masking will allow the project to work.
 
 ## Problems and solutions:
 1. Unreadable compartment labels: the camera resolution was too low to read the text on the pill organizer so I replaced the text with symbols to make sure the robot can recognise the compartments
@@ -427,3 +445,4 @@ Put the green pill in the triangle compartment.
 6. https://huggingface.co/blog/samuellimabraz/peft-methods
 7. https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/python/tutorial.ipynb#scrollTo=slhf39lGxvDI
 
+8. Emukpere, D., Deffayet, R., & Renders, J.-M. (2026). *Robust Skills, Brittle Grounding: Diagnosing Restricted Generalization in Vision-Language Action Policies via Multi-Object Picking*. arXiv:2602.24143. https://arxiv.org/abs/2602.24143
