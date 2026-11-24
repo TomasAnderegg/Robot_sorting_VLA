@@ -380,11 +380,51 @@ No further experiments were done to solve this open problem.
 #### Conclusion:
 
 Despite three experiments, the model struggles to detect the correct colour. [Emukpere et al., 2026] also mentioned this problem in their experiments. To carry on this project, as mentioned earlier, a YOLO model will be used to detect the correct pill according to the task and will mask the others. Since the model knows how to grasp, the YOLO model and the masking will allow the project to work.
+
 ### Visual Model
 
-To tackle the visual understanding problem mentioned previously, I decide to use a YOLO model that detects the correct pill according to the task and mask the others. The policy would only focus on the grasping. 
+The previous tests showed that the policy does not reliably use the colour word to choose its target. Instead of asking the policy to make that choice, I moved it into a separate perception module: the camera image is edited at every frame so that, ideally, only the requested pill remains visible, and the policy only has to grasp.
 
-I choose a YOLOn11 that I fine-tuned with my own labeled dataset created with RoboFlow. I needed then to connect this module to the pipeline of the robot. I needed to dig inside the LeRobot scripts to monkey patch the correct function that receives the raw image camera input and gives it to the model (ThreadSafeRobot.get_observation). Once the monkey patch was created, I needed to construct my own rollout function to make sure my function with the YOLO model was taken into account. 
+I first built the masking with coloured Lego bricks (red, blue, yellow, green) standing in for pills. The function `frame_mask` detects each colour with HSV ranges that I measured on frames from a recorded episode. For every colour that is not the target, it builds a mask of that colour, closes small holes, and dilates it slightly to cover edges and reflections, without touching the target. It then takes a band of background around the masked regions (the "ring": a larger dilation minus the masked regions and minus any other brick) and paints the masked regions with the median colour of that band. The median is computed once per colour, so all bricks of one colour become one flat patch of background colour. The patches are still visible, but they no longer look like bricks.
+
+<p align="center">
+  <img src="../assets/pill_lego_brick_mask.png" width="90%">
+</p>
+<p align="center"><em><b>Figure X.</b> Colour masking with Lego bricks. Left: camera image. Right: masked image for the task "yellow": every non-target brick is replaced by a flat patch of the surrounding background colour.</em></p>
+
+Since real pills are white, HSV ranges can no longer tell them apart. Rather than writing a new masking method, I turned the real pills back into the coloured problem that already worked, at two different moments:
+
+1. Once, before the rollout starts `main()` rewrites the task in `sys.argv`, replacing the pill name with a colour ("Put the amox pill in the circle compartment." becomes "Put the red pill in the circle compartment."). Each pill type has a fixed colour: amox to red, cal to blue, nast to yellow, ibu to green.
+2. At every frame a YOLO11s detector, fine-tuned on my own pills, finds each pill and its type. `colour_boxes` paints each detected box with its type's colour, and `frame_mask` masks every colour except the target's, exactly as with the Lego bricks.
+
+The per-frame step runs inside LeRobot through a monkey patch: I replaced `ThreadSafeRobot.get_observation` with my own function `get_masked_observation`, which takes the raw camera image, runs YOLO, paints and masks it, and returns the masked image to the policy. This changes what the policy sees without modifying the LeRobot library. My script `my_rollout.py` rewrites the task, applies the patch, then calls LeRobot's rollout.
+
+YOLO alone was not stable enough: a pill's predicted type changed from frame to frame, so the target masked and unmasked itself during the episode. I therefore added three mechanisms:
+- A tracking method YOLO runs in tracking mode, so each pill keeps the same ID across frames.
+- Votes per pill `stable_class` keeps the last 15 predicted types for each ID and uses the most frequent one.
+- Target lock a pill becomes the target only after 8 votes for the target type, and stays locked until it has been out of view for 30 frames. While the locked pill is visible, it is the only one painted with the target colour: any other pill predicted as the target is painted as a distractor and masked.
+
+The lock has two gaps. Before a target is locked, and while the locked pill is hidden (for example by the gripper), every pill predicted as the target type keeps the target colour, so two pills can briefly look like the target. I designed this approach, and Claude helped implement the voting and lock logic.
+
+The training set has 327 images labelled in Roboflow, with 4 classes (`amox`, `cal`, `ibu`, `nast`). They come from two sources: 99 frames from 17 recorded episodes, and 228 frames saved during my own rollouts, so that the detector also sees the arm and the lighting of real deployment. The validation set has 30 frames from 4 other recorded episodes. Frames from the same episode look alike, so the effective sample is closer to 4 scenes than to 30 images, and it contains no rollout frames.
+
+I trained YOLO11n and YOLO11s for 150 epochs at 640 px. On the validation set, mAP50-95 is nearly tied (0.794 for both). YOLO11s has a higher recall (0.90 vs 0.86) but a lower precision (0.91 vs 0.95): it misses fewer pills but produces more false detections. Each type of error has a different effect on the masked image:
+- A missed pill is not painted, so it stays visible to the policy as a white pill.
+- A false detection with a non-target class is painted and then masked, which leaves a flat background-coloured patch where there was no pill, as near the gripper in Figure Y. It does not attract the policy, but it adds an artefact to the image.
+- A false detection with the target class keeps the target colour, and the policy may go to it. The target lock reduces this risk, because a false target must collect 8 votes before it is locked, but it does not remove it: a false target that collects 8 votes first is locked like a real one.
+
+<p align="center">
+  <img src="../assets/yolo_medoc_masking.png" width="90%">
+</p>
+<p align="center"><em><b>Figure Y.</b> Real pills. Left: camera image. Middle: YOLO boxes painted with each pill type's colour. Right: masked image passed to the policy for the task "cal" (target painted blue).</em></p>
+
+**Limitation**. I have not yet run controlled trials comparing task success with and without masking, so this section shows how the perception module works, not how much it improves sorting. The next step is to run the same layouts N times with masking and N times without, and to report the success rate of each.
+
+### Prescription
+
+The last part of the project is a web interface that I use on my phone. I photograph a prescription, and the PC reads it with OCR (Tesseract) and a parser that turns it into a table: for each pill, how many to take in the morning, at noon, in the evening and at night. Each time of day corresponds to one compartment of the organizer, marked with a symbol (morning to circle, noon to cross, evening to triangle, night to square), so the robot receives commands such as "Put the amox pill in the circle compartment."
+
+Because the robot handles medication, the parser refuses to guess. It gives an error instead of a task in these cases: a drug name it does not recognise followed by a dosage, a known drug with no dosage, a half tablet, a frequency without times ("3x/day"), more than 4 pills of one drug at one time of day, or more pills than fit in one compartment. These rules are covered by 27 tests. The table is then shown on the phone, where I can check and correct it, and the robot only starts when I press Confirm. It then runs one rollout per pill, filling one day of the organizer. I designed the structure and the safety rules of this part, and Claude wrote the code, since it was outside the main scope of the project.
 
 ## Problems and solutions:
 1. Unreadable compartment labels: the camera resolution was too low to read the text on the pill organizer so I replaced the text with symbols to make sure the robot can recognise the compartments
