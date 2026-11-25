@@ -40,36 +40,6 @@ TASK_FLAGS = ("--task=", "--dataset.single_task=")
 
 original_get_observation = ThreadSafeRobot.get_observation #returns a dict with the states and obs
 
-def yolo_mask(img, result, target, pad=7):
-    '''Paint over every detected pill that is not the target, using the background colour around it.'''
-    H, W = img.shape[:2]
-    boxes = result.boxes.xyxy.cpu().numpy().astype(int)
-    classes = result.boxes.cls.cpu().numpy().astype(int)
-
-    any_pill = np.zeros((H, W), bool)
-    target_mask = np.zeros((H, W), bool)
-    distractors = []
-
-    for (x1, y1, x2, y2), c in zip(boxes, classes):
-        m = np.zeros((H, W), bool)
-        m[max(y1 - pad, 0):y2 + pad, max(x1 - pad, 0):x2 + pad] = True   # box + small margin
-        any_pill |= m
-        if result.names[c] == target:
-            target_mask |= m
-        else:
-            distractors.append(m)
-
-    mask_img = img.copy()
-    big_kernel = np.ones((9, 9), np.uint8)
-    for m in distractors:
-        big = cv2.dilate(m.astype(np.uint8), big_kernel).astype(bool)
-        ring = big & ~any_pill                       # background only, no pill
-        paint = m & ~target_mask                     # never paint over the target
-        if paint.any() and ring.any():
-            mask_img[paint] = np.median(img[ring], axis=0)
-
-    return mask_img
-
 def get_masked_observation(self) -> dict[str, Any]:
     obs = original_get_observation(self)
     
@@ -111,16 +81,16 @@ def count_detections(result):
         frames_target_locked += 1
 
 
-def print_detection_stats():
-    '''End of the episode: how well YOLO followed the target pill.'''
-    print(f"\n===== YOLO stats, target '{TASK_PILL}': {frame_count} frames, {frames_with_pill} with a pill")
-    if frames_with_pill == 0:
-        return
-    for label, n in [("target seen (raw YOLO)", frames_target_seen),
-                     ("target locked (votes)", frames_target_locked),
-                     ("target on 2+ pills", frames_target_twice)]:
-        print(f"{label:24s}: {n}/{frames_with_pill} = {100 * n / frames_with_pill:.0f}%")
-    print("frames per class        :", dict(class_frames))
+# def print_detection_stats():
+#     '''End of the episode: how well YOLO followed the target pill.'''
+#     print(f"\n===== YOLO stats, target '{TASK_PILL}': {frame_count} frames, {frames_with_pill} with a pill")
+#     if frames_with_pill == 0:
+#         return
+#     for label, n in [("target seen (raw YOLO)", frames_target_seen),
+#                      ("target locked (votes)", frames_target_locked),
+#                      ("target on 2+ pills", frames_target_twice)]:
+#         print(f"{label:24s}: {n}/{frames_with_pill} = {100 * n / frames_with_pill:.0f}%")
+#     print("frames per class        :", dict(class_frames))
 
 
 
@@ -155,7 +125,8 @@ def main():
     try:
         lerobot_main()
     finally:
-        print_detection_stats()      # printed even after Ctrl+C or a crash
+        # print_detection_stats()      # printed even after Ctrl+C or a crash
+        pass
 
             
 
