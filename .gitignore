@@ -243,3 +243,7 @@ outputs/
 *.xml
 *.partMJDATA.TXT
 MUJOCO_LOG.TXT
+
+# MuJoCo scene (SO-101 from MuJoCo Menagerie, Apache-2.0)
+!scene/*.xml
+!scene/assets/*.stl

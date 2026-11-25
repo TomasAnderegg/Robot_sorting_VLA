@@ -1,3 +1,4 @@
+from pathlib import Path
 import torch
 import numpy as np
 from lerobot.datasets import LeRobotDataset
@@ -157,7 +158,8 @@ if __name__ == "__main__":
     # print("action converted:", len(action_converted))
     
     # # model = mujoco.MjModel.from_xml_path(r"/home/tjga98/mujoco_menagerie/robotstudio_so101/scene.xml") #mjModel contains model description that do not change overt time!
-    model = mujoco.MjModel.from_xml_path(r"/home/tjga98/mujoco_menagerie/robotstudio_so101/scene_pills.xml")
+    SCENE = Path(__file__).resolve().parent.parent / "scene" / "scene_pills.xml"
+    model = mujoco.MjModel.from_xml_path(str(SCENE))
     # print(dir(mujoco.MjModel))
     data = mujoco.MjData(model)
     

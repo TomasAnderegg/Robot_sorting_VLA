@@ -1,3 +1,4 @@
+from pathlib import Path
 from transfer import transfer_to_mujoco
 import torch
 import numpy as np
@@ -65,7 +66,8 @@ if __name__ == "__main__":
         policy.reset()
 
         # initialize the Mujoco env
-        model = mujoco.MjModel.from_xml_path(r"/home/tjga98/mujoco_menagerie/robotstudio_so101/scene_pills.xml")
+        SCENE = Path(__file__).resolve().parent.parent / "scene" / "scene_pills.xml"
+        model = mujoco.MjModel.from_xml_path(str(SCENE))
         data = mujoco.MjData(model)
         # print("cameras:", dir(model.camera))
         cam_id = model.camera("wrist_cam").id
